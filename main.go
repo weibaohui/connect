@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
 	"time"
 )
 
@@ -16,8 +17,20 @@ var (
 	checkInterval int
 	// 只运行一次
 	runOnce bool
+	// 飞书webhook URL
+	feishuWebhook string
+	// 飞书机器人签名密钥
+	feishuSecret string
+	// 是否启用通知功能
+	enableNotification bool
+	// 总是发送通知（即使IP未变化）
+	alwaysNotify bool
 	// WiFi连接器实例
 	connector WiFiConnector
+	// IP变化检测器
+	ipDetector *IPChangeDetector
+	// 飞书通知器
+	feishuNotifier *FeishuNotifier
 	// 程序版本
 	version string = "1.0.0"
 )
@@ -71,6 +84,30 @@ func checkAndConnect() {
 				log.Printf("获取IP地址失败: %v", err)
 			} else {
 				log.Printf("分配到的IP地址: %s", ipAddr)
+				// 检测IP地址是否变化并发送通知
+				if enableNotification && ipDetector != nil && feishuNotifier != nil {
+					log.Printf("检测IP地址变化: %s", ipAddr)
+					ipChanged := ipDetector.CheckIPChange(ipAddr)
+					if ipChanged || alwaysNotify {
+						oldIP := ipDetector.GetPreviousIP()
+						if ipChanged {
+							log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
+						} else {
+							log.Printf("发送飞书通知(强制发送): %s", ipAddr)
+						}
+						feishuNotifier.SendIPChangeNotificationAsync(oldIP, ipAddr, targetWiFi)
+					} else {
+						log.Printf("IP地址未变化，不发送通知: %s", ipAddr)
+					}
+				} else {
+					if !enableNotification {
+						log.Printf("通知功能未启用")
+					} else if ipDetector == nil {
+						log.Printf("IP检测器未初始化")
+					} else if feishuNotifier == nil {
+						log.Printf("飞书通知器未初始化")
+					}
+				}
 			}
 		}
 	} else {
@@ -80,6 +117,30 @@ func checkAndConnect() {
 			log.Printf("获取IP地址失败: %v", err)
 		} else {
 			log.Printf("当前IP地址: %s", ipAddr)
+			// 检测IP地址是否变化并发送通知
+			if enableNotification && ipDetector != nil && feishuNotifier != nil {
+				log.Printf("检测IP地址变化: %s", ipAddr)
+				ipChanged := ipDetector.CheckIPChange(ipAddr)
+				if ipChanged || alwaysNotify {
+					oldIP := ipDetector.GetPreviousIP()
+					if ipChanged {
+						log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
+					} else {
+						log.Printf("发送飞书通知(强制发送): %s", ipAddr)
+					}
+					feishuNotifier.SendIPChangeNotificationAsync(oldIP, ipAddr, targetWiFi)
+				} else {
+					log.Printf("IP地址未变化，不发送通知: %s", ipAddr)
+				}
+			} else {
+				if !enableNotification {
+					log.Printf("通知功能未启用")
+				} else if ipDetector == nil {
+					log.Printf("IP检测器未初始化")
+				} else if feishuNotifier == nil {
+					log.Printf("飞书通知器未初始化")
+				}
+			}
 		}
 	}
 }
@@ -90,11 +151,41 @@ func main() {
 	flag.StringVar(&wifiPassword, "p", "", "WiFi密码")
 	flag.IntVar(&checkInterval, "i", 10, "检查间隔（秒）")
 	flag.BoolVar(&runOnce, "once", false, "只运行一次")
+	flag.StringVar(&feishuWebhook, "feishu-webhook", "", "飞书webhook URL")
+	flag.StringVar(&feishuSecret, "feishu-secret", "", "飞书机器人签名密钥")
+	flag.BoolVar(&enableNotification, "enable-notification", false, "是否启用通知功能")
+	flag.BoolVar(&alwaysNotify, "always-notify", false, "总是发送通知（即使IP未变化）")
 	flag.Parse()
 
 	// 检查必需参数
 	if targetWiFi == "" {
-		log.Fatal("请指定目标WiFi网络名称，使用 -wifi 参数")
+		log.Fatal("请指定目标WiFi网络名称，使用 -w 参数")
+	}
+
+	// 初始化通知相关组件
+	if enableNotification {
+		// 优先从环境变量读取配置
+		envWebhook := os.Getenv("FEISHU_WEBHOOK_URL")
+		envSecret := os.Getenv("FEISHU_SECRET")
+
+		// 如果环境变量不为空，优先使用环境变量
+		if envWebhook != "" {
+			feishuWebhook = envWebhook
+		}
+		if envSecret != "" {
+			feishuSecret = envSecret
+		}
+
+		// 检查配置是否完整
+		if feishuWebhook == "" || feishuSecret == "" {
+			log.Println("警告: 启用了通知功能但缺少飞书配置，将禁用通知功能")
+			log.Println("可以通过设置环境变量 FEISHU_WEBHOOK_URL 和 FEISHU_SECRET 或使用命令行参数 -feishu-webhook 和 -feishu-secret")
+			enableNotification = false
+		} else {
+			ipDetector = NewIPChangeDetector()
+			feishuNotifier = NewFeishuNotifier(feishuWebhook, feishuSecret)
+			log.Printf("通知功能已启用: %s", feishuWebhook)
+		}
 	}
 
 	// 创建WiFi连接器

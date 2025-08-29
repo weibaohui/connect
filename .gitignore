@@ -38,3 +38,4 @@ data/
 ./dist
 auto-connect-wifi
 connect
+.qoder/
