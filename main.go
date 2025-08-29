@@ -138,8 +138,6 @@ func main() {
 	flag.StringVar(&targetWiFi, "w", "", "目标WiFi网络名称")
 	flag.StringVar(&wifiPassword, "p", "", "WiFi密码")
 	flag.IntVar(&checkInterval, "i", 10, "检查间隔（秒）")
-	flag.StringVar(&feishuWebhook, "feishu-webhook", "", "飞书webhook URL")
-	flag.StringVar(&feishuSecret, "feishu-secret", "", "飞书机器人签名密钥")
 	flag.BoolVar(&enableNotification, "enable-notification", false, "是否启用通知功能")
 	flag.Parse()
 
