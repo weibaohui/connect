@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-
-
 // 全局变量存储命令行参数
 var (
 	// 目标WiFi网络名称
@@ -23,8 +21,6 @@ var (
 	// 程序版本
 	version string = "1.0.0"
 )
-
-
 
 // checkAndConnect 检查并连接WiFi的主要逻辑
 func checkAndConnect() {
@@ -76,9 +72,9 @@ func checkAndConnect() {
 
 func main() {
 	// 解析命令行参数
-	flag.StringVar(&targetWiFi, "wifi", "", "目标WiFi网络名称")
-	flag.StringVar(&wifiPassword, "password", "", "WiFi密码")
-	flag.IntVar(&checkInterval, "interval", 30, "检查间隔（秒）")
+	flag.StringVar(&targetWiFi, "w", "", "目标WiFi网络名称")
+	flag.StringVar(&wifiPassword, "p", "", "WiFi密码")
+	flag.IntVar(&checkInterval, "i", 10, "检查间隔（秒）")
 	flag.BoolVar(&runOnce, "once", false, "只运行一次")
 	flag.Parse()
 
