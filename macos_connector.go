@@ -117,3 +117,25 @@ func (m *MacOSConnector) Enable() error {
 	}
 	return nil
 }
+
+// GetIPAddress 实现WiFiConnector接口 - 获取当前WiFi接口的IP地址
+func (m *MacOSConnector) GetIPAddress() (string, error) {
+	cmd := exec.Command("ifconfig", m.interfaceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("获取IP地址失败: %v", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "inet ") && !strings.Contains(line, "127.0.0.1") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				return parts[1], nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("未找到IP地址")
+}

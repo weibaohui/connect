@@ -17,6 +17,8 @@ type WiFiConnector interface {
 	IsEnabled() bool
 	// Enable 启用WiFi
 	Enable() error
+	// GetIPAddress 获取当前WiFi接口的IP地址
+	GetIPAddress() (string, error)
 }
 
 // NewWiFiConnector 根据操作系统创建对应的WiFi连接器

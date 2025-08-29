@@ -64,9 +64,23 @@ func checkAndConnect() {
 			log.Printf("连接WiFi失败: %v", err)
 		} else {
 			log.Printf("成功连接到WiFi: %s", targetWiFi)
+			// 等待网络配置完成
+			time.Sleep(2 * time.Second)
+			// 获取并显示IP地址
+			if ipAddr, err := connector.GetIPAddress(); err != nil {
+				log.Printf("获取IP地址失败: %v", err)
+			} else {
+				log.Printf("分配到的IP地址: %s", ipAddr)
+			}
 		}
 	} else {
 		log.Printf("已连接到目标WiFi: %s", targetWiFi)
+		// 显示当前IP地址
+		if ipAddr, err := connector.GetIPAddress(); err != nil {
+			log.Printf("获取IP地址失败: %v", err)
+		} else {
+			log.Printf("当前IP地址: %s", ipAddr)
+		}
 	}
 }
 

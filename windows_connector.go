@@ -112,3 +112,28 @@ func (w *WindowsConnector) Enable() error {
 	}
 	return nil
 }
+
+// GetIPAddress 实现WiFiConnector接口 - 获取当前WiFi接口的IP地址
+func (w *WindowsConnector) GetIPAddress() (string, error) {
+	cmd := exec.Command("netsh", "interface", "ip", "show", "address", w.interfaceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("获取IP地址失败: %v", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "IP Address:") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				ipAddr := strings.TrimSpace(parts[1])
+				if ipAddr != "" && ipAddr != "127.0.0.1" {
+					return ipAddr, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("未找到IP地址")
+}

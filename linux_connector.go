@@ -106,3 +106,32 @@ func (l *LinuxConnector) Enable() error {
 	}
 	return nil
 }
+
+// GetIPAddress 实现WiFiConnector接口 - 获取当前WiFi接口的IP地址
+func (l *LinuxConnector) GetIPAddress() (string, error) {
+	cmd := exec.Command("ip", "addr", "show", l.interfaceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("获取IP地址失败: %v", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "inet ") && !strings.Contains(line, "127.0.0.1") {
+			parts := strings.Fields(line)
+			for i, part := range parts {
+				if part == "inet" && i+1 < len(parts) {
+					ipWithMask := parts[i+1]
+					// 移除子网掩码部分 (例如: 192.168.1.100/24 -> 192.168.1.100)
+					if slashIndex := strings.Index(ipWithMask, "/"); slashIndex != -1 {
+						return ipWithMask[:slashIndex], nil
+					}
+					return ipWithMask, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("未找到IP地址")
+}
