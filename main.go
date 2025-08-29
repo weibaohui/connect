@@ -128,10 +128,7 @@ func main() {
 	ticker := time.NewTicker(time.Duration(checkInterval) * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			checkAndConnect()
-		}
+	for range ticker.C {
+		checkAndConnect()
 	}
 }
