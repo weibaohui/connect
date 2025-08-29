@@ -15,16 +15,12 @@ var (
 	wifiPassword string
 	// 检查间隔时间（秒）
 	checkInterval int
-	// 只运行一次
-	runOnce bool
 	// 飞书webhook URL
 	feishuWebhook string
 	// 飞书机器人签名密钥
 	feishuSecret string
 	// 是否启用通知功能
 	enableNotification bool
-	// 总是发送通知（即使IP未变化）
-	alwaysNotify bool
 	// WiFi连接器实例
 	connector WiFiConnector
 	// IP变化检测器
@@ -88,13 +84,9 @@ func checkAndConnect() {
 				if enableNotification && ipDetector != nil && feishuNotifier != nil {
 					log.Printf("检测IP地址变化: %s", ipAddr)
 					ipChanged := ipDetector.CheckIPChange(ipAddr)
-					if ipChanged || alwaysNotify {
+					if ipChanged {
 						oldIP := ipDetector.GetPreviousIP()
-						if ipChanged {
-							log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
-						} else {
-							log.Printf("发送飞书通知(强制发送): %s", ipAddr)
-						}
+						log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
 						feishuNotifier.SendIPChangeNotificationAsync(oldIP, ipAddr, targetWiFi)
 					} else {
 						log.Printf("IP地址未变化，不发送通知: %s", ipAddr)
@@ -121,13 +113,9 @@ func checkAndConnect() {
 			if enableNotification && ipDetector != nil && feishuNotifier != nil {
 				log.Printf("检测IP地址变化: %s", ipAddr)
 				ipChanged := ipDetector.CheckIPChange(ipAddr)
-				if ipChanged || alwaysNotify {
+				if ipChanged {
 					oldIP := ipDetector.GetPreviousIP()
-					if ipChanged {
-						log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
-					} else {
-						log.Printf("发送飞书通知(强制发送): %s", ipAddr)
-					}
+					log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
 					feishuNotifier.SendIPChangeNotificationAsync(oldIP, ipAddr, targetWiFi)
 				} else {
 					log.Printf("IP地址未变化，不发送通知: %s", ipAddr)
@@ -150,11 +138,9 @@ func main() {
 	flag.StringVar(&targetWiFi, "w", "", "目标WiFi网络名称")
 	flag.StringVar(&wifiPassword, "p", "", "WiFi密码")
 	flag.IntVar(&checkInterval, "i", 10, "检查间隔（秒）")
-	flag.BoolVar(&runOnce, "once", false, "只运行一次")
 	flag.StringVar(&feishuWebhook, "feishu-webhook", "", "飞书webhook URL")
 	flag.StringVar(&feishuSecret, "feishu-secret", "", "飞书机器人签名密钥")
 	flag.BoolVar(&enableNotification, "enable-notification", false, "是否启用通知功能")
-	flag.BoolVar(&alwaysNotify, "always-notify", false, "总是发送通知（即使IP未变化）")
 	flag.Parse()
 
 	// 检查必需参数
@@ -208,12 +194,6 @@ func main() {
 
 	// 执行检查和连接
 	checkAndConnect()
-
-	// 如果设置为只运行一次，则退出
-	if runOnce {
-		log.Println("程序执行完毕")
-		return
-	}
 
 	// 定期检查
 	ticker := time.NewTicker(time.Duration(checkInterval) * time.Second)
