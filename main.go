@@ -10,6 +10,35 @@ import (
 	"time"
 )
 
+// WiFiConnector 定义WiFi连接器接口
+type WiFiConnector interface {
+	// GetInterface 获取WiFi网卡接口名称
+	GetInterface() (string, error)
+	// GetCurrentNetwork 获取当前连接的WiFi网络名称
+	GetCurrentNetwork() (string, error)
+	// Connect 连接到指定的WiFi网络
+	Connect(networkName, password string) error
+	// IsEnabled 检查WiFi是否已启用
+	IsEnabled() bool
+	// Enable 启用WiFi
+	Enable() error
+}
+
+// MacOSConnector macOS平台的WiFi连接器
+type MacOSConnector struct {
+	interfaceName string
+}
+
+// WindowsConnector Windows平台的WiFi连接器
+type WindowsConnector struct {
+	interfaceName string
+}
+
+// LinuxConnector Linux平台的WiFi连接器
+type LinuxConnector struct {
+	interfaceName string
+}
+
 // 全局变量存储命令行参数
 var (
 	// 目标WiFi网络名称
@@ -18,28 +47,41 @@ var (
 	wifiPassword string
 	// 检查间隔时间（秒）
 	checkInterval int
-	// WiFi网卡接口名称
-	wifiInterface string
+	// 只运行一次
+	runOnce bool
+	// WiFi连接器实例
+	connector WiFiConnector
 	// 程序版本
 	version string = "1.0.0"
 )
 
-// getWiFiInterface 自动检测WiFi网卡接口名称（跨平台）
-func getWiFiInterface() (string, error) {
+// NewWiFiConnector 创建WiFi连接器工厂函数
+func NewWiFiConnector() (WiFiConnector, error) {
 	switch runtime.GOOS {
 	case "darwin": // macOS
-		return getWiFiInterfaceMacOS()
+		return NewMacOSConnector()
 	case "windows":
-		return getWiFiInterfaceWindows()
+		return NewWindowsConnector()
 	case "linux":
-		return getWiFiInterfaceLinux()
+		return NewLinuxConnector()
 	default:
-		return "", fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
+		return nil, fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
 	}
 }
 
-// getWiFiInterfaceMacOS macOS平台的WiFi接口检测
-func getWiFiInterfaceMacOS() (string, error) {
+// NewMacOSConnector 创建macOS连接器
+func NewMacOSConnector() (*MacOSConnector, error) {
+	connector := &MacOSConnector{}
+	interfaceName, err := connector.detectInterface()
+	if err != nil {
+		return nil, err
+	}
+	connector.interfaceName = interfaceName
+	return connector, nil
+}
+
+// detectInterface macOS平台的WiFi接口检测
+func (m *MacOSConnector) detectInterface() (string, error) {
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	output, err := cmd.Output()
 	if err != nil {
@@ -72,8 +114,81 @@ func getWiFiInterfaceMacOS() (string, error) {
 	return "", fmt.Errorf("未找到WiFi网络接口")
 }
 
-// getWiFiInterfaceWindows Windows平台的WiFi接口检测
-func getWiFiInterfaceWindows() (string, error) {
+// GetInterface 实现WiFiConnector接口 - 获取WiFi接口名称
+func (m *MacOSConnector) GetInterface() (string, error) {
+	return m.interfaceName, nil
+}
+
+// GetCurrentNetwork 实现WiFiConnector接口 - 获取当前WiFi网络
+func (m *MacOSConnector) GetCurrentNetwork() (string, error) {
+	cmd := exec.Command("networksetup", "-getairportnetwork", m.interfaceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("获取当前WiFi失败: %v", err)
+	}
+
+	result := strings.TrimSpace(string(output))
+	if strings.Contains(result, "You are not associated with an AirPort network") {
+		return "", nil // 未连接任何WiFi
+	}
+
+	// 解析输出格式: "Current Wi-Fi Network: NetworkName"
+	if strings.HasPrefix(result, "Current Wi-Fi Network: ") {
+		networkName := strings.TrimPrefix(result, "Current Wi-Fi Network: ")
+		return strings.TrimSpace(networkName), nil
+	}
+
+	return "", fmt.Errorf("无法解析WiFi网络名称: %s", result)
+}
+
+// Connect 实现WiFiConnector接口 - 连接WiFi网络
+func (m *MacOSConnector) Connect(networkName, password string) error {
+	var cmd *exec.Cmd
+	if password != "" {
+		cmd = exec.Command("networksetup", "-setairportnetwork", m.interfaceName, networkName, password)
+	} else {
+		cmd = exec.Command("networksetup", "-setairportnetwork", m.interfaceName, networkName)
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("连接WiFi失败: %v", err)
+	}
+
+	return nil
+}
+
+// IsEnabled 实现WiFiConnector接口 - 检查WiFi是否启用
+func (m *MacOSConnector) IsEnabled() bool {
+	cmd := exec.Command("networksetup", "-getairportpower", m.interfaceName)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), "On")
+}
+
+// Enable 实现WiFiConnector接口 - 启用WiFi
+func (m *MacOSConnector) Enable() error {
+	cmd := exec.Command("networksetup", "-setairportpower", m.interfaceName, "on")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("启用WiFi失败: %v", err)
+	}
+	return nil
+}
+
+// NewWindowsConnector 创建Windows连接器
+func NewWindowsConnector() (*WindowsConnector, error) {
+	connector := &WindowsConnector{}
+	interfaceName, err := connector.detectInterface()
+	if err != nil {
+		return nil, err
+	}
+	connector.interfaceName = interfaceName
+	return connector, nil
+}
+
+// detectInterface Windows平台的WiFi接口检测
+func (w *WindowsConnector) detectInterface() (string, error) {
 	// 使用netsh命令获取WiFi接口
 	cmd := exec.Command("netsh", "wlan", "show", "interfaces")
 	output, err := cmd.Output()
@@ -98,59 +213,13 @@ func getWiFiInterfaceWindows() (string, error) {
 	return "", fmt.Errorf("未找到WiFi网络接口")
 }
 
-// getWiFiInterfaceLinux Linux平台的WiFi接口检测
-func getWiFiInterfaceLinux() (string, error) {
-	// 尝试常见的WiFi接口名称
-	commonInterfaces := []string{"wlan0", "wlp2s0", "wlp3s0", "wlo1"}
-	for _, iface := range commonInterfaces {
-		// 检查接口是否存在
-		cmd := exec.Command("ip", "link", "show", iface)
-		if err := cmd.Run(); err == nil {
-			return iface, nil
-		}
-	}
-
-	return "", fmt.Errorf("未找到WiFi网络接口")
+// GetInterface 实现WiFiConnector接口 - 获取WiFi接口名称
+func (w *WindowsConnector) GetInterface() (string, error) {
+	return w.interfaceName, nil
 }
 
-// getCurrentWiFi 获取当前连接的WiFi网络名称（跨平台）
-func getCurrentWiFi() (string, error) {
-	switch runtime.GOOS {
-	case "darwin": // macOS
-		return getCurrentWiFiMacOS()
-	case "windows":
-		return getCurrentWiFiWindows()
-	case "linux":
-		return getCurrentWiFiLinux()
-	default:
-		return "", fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
-	}
-}
-
-// getCurrentWiFiMacOS macOS平台获取当前WiFi
-func getCurrentWiFiMacOS() (string, error) {
-	cmd := exec.Command("networksetup", "-getairportnetwork", wifiInterface)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("获取当前WiFi失败: %v", err)
-	}
-
-	result := strings.TrimSpace(string(output))
-	if strings.Contains(result, "You are not associated with an AirPort network") {
-		return "", nil // 未连接任何WiFi
-	}
-
-	// 解析输出格式: "Current Wi-Fi Network: NetworkName"
-	parts := strings.Split(result, ": ")
-	if len(parts) >= 2 {
-		return strings.TrimSpace(parts[1]), nil
-	}
-
-	return "", fmt.Errorf("无法解析WiFi网络名称: %s", result)
-}
-
-// getCurrentWiFiWindows Windows平台获取当前WiFi
-func getCurrentWiFiWindows() (string, error) {
+// GetCurrentNetwork 实现WiFiConnector接口 - 获取当前WiFi网络
+func (w *WindowsConnector) GetCurrentNetwork() (string, error) {
 	cmd := exec.Command("netsh", "wlan", "show", "interfaces")
 	output, err := cmd.Output()
 	if err != nil {
@@ -174,19 +243,85 @@ func getCurrentWiFiWindows() (string, error) {
 	return "", nil // 未连接任何WiFi
 }
 
-// getCurrentWiFiLinux Linux平台获取当前WiFi
-func getCurrentWiFiLinux() (string, error) {
-	// 尝试使用iwgetid命令
-	cmd := exec.Command("iwgetid", "-r")
+// Connect 实现WiFiConnector接口 - 连接WiFi网络
+func (w *WindowsConnector) Connect(networkName, password string) error {
+	var cmd *exec.Cmd
+	if password != "" {
+		cmd = exec.Command("netsh", "wlan", "connect", "name="+networkName, "key="+password)
+	} else {
+		cmd = exec.Command("netsh", "wlan", "connect", "name="+networkName)
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("连接WiFi失败: %v", err)
+	}
+
+	return nil
+}
+
+// IsEnabled 实现WiFiConnector接口 - 检查WiFi是否启用
+func (w *WindowsConnector) IsEnabled() bool {
+	cmd := exec.Command("netsh", "interface", "show", "interface", w.interfaceName)
 	output, err := cmd.Output()
-	if err == nil {
-		ssid := strings.TrimSpace(string(output))
-		if ssid != "" {
-			return ssid, nil
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), "Enabled")
+}
+
+// Enable 实现WiFiConnector接口 - 启用WiFi
+func (w *WindowsConnector) Enable() error {
+	cmd := exec.Command("netsh", "interface", "set", "interface", w.interfaceName, "enable")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("启用WiFi失败: %v", err)
+	}
+	return nil
+}
+
+// NewLinuxConnector 创建Linux连接器
+func NewLinuxConnector() (*LinuxConnector, error) {
+	connector := &LinuxConnector{}
+	interfaceName, err := connector.detectInterface()
+	if err != nil {
+		return nil, err
+	}
+	connector.interfaceName = interfaceName
+	return connector, nil
+}
+
+// detectInterface Linux平台的WiFi接口检测
+func (l *LinuxConnector) detectInterface() (string, error) {
+	// 尝试常见的WiFi接口名称
+	commonInterfaces := []string{"wlan0", "wlp2s0", "wlp3s0", "wlo1"}
+	for _, iface := range commonInterfaces {
+		// 检查接口是否存在
+		cmd := exec.Command("ip", "link", "show", iface)
+		if err := cmd.Run(); err == nil {
+			return iface, nil
 		}
 	}
 
-	// 如果iwgetid失败，尝试使用nmcli
+	return "", fmt.Errorf("未找到WiFi网络接口")
+}
+
+// GetInterface 实现WiFiConnector接口 - 获取WiFi接口名称
+func (l *LinuxConnector) GetInterface() (string, error) {
+	return l.interfaceName, nil
+}
+
+// GetCurrentNetwork 实现WiFiConnector接口 - 获取当前WiFi网络
+func (l *LinuxConnector) GetCurrentNetwork() (string, error) {
+	// 优先使用iwgetid命令
+	cmd := exec.Command("iwgetid", "-r")
+	output, err := cmd.Output()
+	if err == nil {
+		networkName := strings.TrimSpace(string(output))
+		if networkName != "" {
+			return networkName, nil
+		}
+	}
+
+	// 备用方案：使用nmcli
 	cmd = exec.Command("nmcli", "-t", "-f", "active,ssid", "dev", "wifi")
 	output, err = cmd.Output()
 	if err != nil {
@@ -204,258 +339,130 @@ func getCurrentWiFiLinux() (string, error) {
 	return "", nil // 未连接任何WiFi
 }
 
-// connectToWiFi 连接到指定的WiFi网络（跨平台）
-func connectToWiFi(networkName, password string) error {
-	log.Printf("正在连接到WiFi网络: %s", networkName)
-	switch runtime.GOOS {
-	case "darwin": // macOS
-		return connectToWiFiMacOS(networkName, password)
-	case "windows":
-		return connectToWiFiWindows(networkName, password)
-	case "linux":
-		return connectToWiFiLinux(networkName, password)
-	default:
-		return fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
-	}
-}
-
-// connectToWiFiMacOS macOS平台连接WiFi
-func connectToWiFiMacOS(networkName, password string) error {
+// Connect 实现WiFiConnector接口 - 连接WiFi网络
+func (l *LinuxConnector) Connect(networkName, password string) error {
 	var cmd *exec.Cmd
 	if password != "" {
-		// 如果提供了密码，使用密码连接
-		cmd = exec.Command("networksetup", "-setairportnetwork", wifiInterface, networkName, password)
-	} else {
-		// 如果没有提供密码，尝试使用已保存的密码连接
-		cmd = exec.Command("networksetup", "-setairportnetwork", wifiInterface, networkName)
-	}
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("连接WiFi失败: %v", err)
-	}
-	log.Printf("成功连接到WiFi网络: %s", networkName)
-	return nil
-}
-
-// connectToWiFiWindows Windows平台连接WiFi
-func connectToWiFiWindows(networkName, password string) error {
-	var cmd *exec.Cmd
-	if password != "" {
-		// 如果提供了密码，使用密码连接
-		cmd = exec.Command("netsh", "wlan", "connect", "name="+networkName, "key="+password)
-	} else {
-		// 如果没有提供密码，尝试使用已保存的密码连接
-		cmd = exec.Command("netsh", "wlan", "connect", "name="+networkName)
-	}
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("连接WiFi失败: %v", err)
-	}
-	log.Printf("成功连接到WiFi网络: %s", networkName)
-	return nil
-}
-
-// connectToWiFiLinux Linux平台连接WiFi
-func connectToWiFiLinux(networkName, password string) error {
-	// 尝试使用nmcli连接
-	var cmd *exec.Cmd
-	if password != "" {
-		// 如果提供了密码，使用密码连接
 		cmd = exec.Command("nmcli", "dev", "wifi", "connect", networkName, "password", password)
 	} else {
-		// 如果没有提供密码，尝试使用已保存的密码连接
 		cmd = exec.Command("nmcli", "dev", "wifi", "connect", networkName)
 	}
-	err := cmd.Run()
-	if err != nil {
+
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("连接WiFi失败: %v", err)
 	}
-	log.Printf("成功连接到WiFi网络: %s", networkName)
+
 	return nil
 }
 
-// isWiFiEnabled 检查WiFi是否已启用（跨平台）
-func isWiFiEnabled() bool {
-	switch runtime.GOOS {
-	case "darwin": // macOS
-		return isWiFiEnabledMacOS()
-	case "windows":
-		return isWiFiEnabledWindows()
-	case "linux":
-		return isWiFiEnabledLinux()
-	default:
-		log.Printf("不支持的操作系统: %s", runtime.GOOS)
-		return false
-	}
-}
-
-// isWiFiEnabledMacOS macOS平台检查WiFi状态
-func isWiFiEnabledMacOS() bool {
-	cmd := exec.Command("networksetup", "-getairportpower", wifiInterface)
+// IsEnabled 实现WiFiConnector接口 - 检查WiFi是否启用
+func (l *LinuxConnector) IsEnabled() bool {
+	cmd := exec.Command("ip", "link", "show", l.interfaceName)
 	output, err := cmd.Output()
 	if err != nil {
-		log.Printf("检查WiFi状态失败: %v", err)
 		return false
 	}
-
-	result := strings.TrimSpace(string(output))
-	return strings.Contains(result, "On")
+	return strings.Contains(string(output), "UP")
 }
 
-// isWiFiEnabledWindows Windows平台检查WiFi状态
-func isWiFiEnabledWindows() bool {
-	cmd := exec.Command("netsh", "interface", "show", "interface", wifiInterface)
-	output, err := cmd.Output()
-	if err != nil {
-		log.Printf("检查WiFi状态失败: %v", err)
-		return false
-	}
-
-	result := strings.TrimSpace(string(output))
-	return strings.Contains(result, "Connected")
-}
-
-// isWiFiEnabledLinux Linux平台检查WiFi状态
-func isWiFiEnabledLinux() bool {
-	// 检查网络接口是否启用
-	cmd := exec.Command("ip", "link", "show", wifiInterface)
-	output, err := cmd.Output()
-	if err != nil {
-		log.Printf("检查WiFi状态失败: %v", err)
-		return false
-	}
-
-	result := strings.TrimSpace(string(output))
-	return strings.Contains(result, "UP")
-}
-
-// enableWiFi 启用WiFi（跨平台）
-func enableWiFi() error {
-	log.Println("正在启用WiFi...")
-	switch runtime.GOOS {
-	case "darwin": // macOS
-		return enableWiFiMacOS()
-	case "windows":
-		return enableWiFiWindows()
-	case "linux":
-		return enableWiFiLinux()
-	default:
-		return fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
-	}
-}
-
-// enableWiFiMacOS macOS平台启用WiFi
-func enableWiFiMacOS() error {
-	cmd := exec.Command("networksetup", "-setairportpower", wifiInterface, "on")
-	err := cmd.Run()
-	if err != nil {
+// Enable 实现WiFiConnector接口 - 启用WiFi
+func (l *LinuxConnector) Enable() error {
+	cmd := exec.Command("ip", "link", "set", l.interfaceName, "up")
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("启用WiFi失败: %v", err)
 	}
-	log.Println("WiFi已启用")
-	// 等待WiFi启动
-	time.Sleep(3 * time.Second)
 	return nil
 }
 
-// enableWiFiWindows Windows平台启用WiFi
-func enableWiFiWindows() error {
-	cmd := exec.Command("netsh", "interface", "set", "interface", wifiInterface, "enable")
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("启用WiFi失败: %v", err)
-	}
-	log.Println("WiFi已启用")
-	// 等待WiFi启动
-	time.Sleep(3 * time.Second)
-	return nil
-}
-
-// enableWiFiLinux Linux平台启用WiFi
-func enableWiFiLinux() error {
-	// 尝试启用网络接口
-	cmd := exec.Command("ip", "link", "set", wifiInterface, "up")
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("启用WiFi失败: %v", err)
-	}
-	log.Println("WiFi已启用")
-	// 等待WiFi启动
-	time.Sleep(3 * time.Second)
-	return nil
-}
-
-// checkAndConnect 检查WiFi连接状态并根据需要进行连接
+// checkAndConnect 检查并连接WiFi的主要逻辑
 func checkAndConnect() {
+	// 自动检测WiFi网卡接口
+	interfaceName, err := connector.GetInterface()
+	if err != nil {
+		log.Printf("获取WiFi接口失败: %v", err)
+		return
+	}
+	log.Printf("检测到WiFi接口: %s", interfaceName)
+
 	// 检查WiFi是否启用
-	if !isWiFiEnabled() {
+	if !connector.IsEnabled() {
 		log.Println("WiFi未启用，正在启用...")
-		if err := enableWiFi(); err != nil {
+		if err := connector.Enable(); err != nil {
 			log.Printf("启用WiFi失败: %v", err)
 			return
 		}
+		log.Println("WiFi已启用")
+		// 等待WiFi启用完成
+		time.Sleep(3 * time.Second)
 	}
 
 	// 获取当前连接的WiFi
-	currentWiFi, err := getCurrentWiFi()
+	currentWiFi, err := connector.GetCurrentNetwork()
 	if err != nil {
-		log.Printf("获取当前WiFi状态失败: %v", err)
+		log.Printf("获取当前WiFi失败: %v", err)
 		return
 	}
 
 	if currentWiFi == "" {
-		// 未连接任何WiFi，连接到目标网络
-		log.Println("未连接任何WiFi网络")
-		if err := connectToWiFi(targetWiFi, wifiPassword); err != nil {
-			log.Printf("连接到目标WiFi失败: %v", err)
-		}
-	} else if currentWiFi != targetWiFi {
-		// 连接到了其他WiFi，切换到目标网络
-		log.Printf("当前连接到: %s，切换到目标网络: %s", currentWiFi, targetWiFi)
-		if err := connectToWiFi(targetWiFi, wifiPassword); err != nil {
-			log.Printf("切换到目标WiFi失败: %v", err)
+		log.Println("当前未连接任何WiFi网络")
+	} else {
+		log.Printf("当前连接的WiFi: %s", currentWiFi)
+	}
+
+	// 如果当前WiFi不是目标WiFi，则尝试连接
+	if currentWiFi != targetWiFi {
+		log.Printf("尝试连接到WiFi: %s", targetWiFi)
+		if err := connector.Connect(targetWiFi, wifiPassword); err != nil {
+			log.Printf("连接WiFi失败: %v", err)
+		} else {
+			log.Printf("成功连接到WiFi: %s", targetWiFi)
 		}
 	} else {
-		// 已经连接到目标WiFi
-		log.Printf("已连接到目标WiFi: %s", currentWiFi)
+		log.Printf("已连接到目标WiFi: %s", targetWiFi)
 	}
 }
 
 func main() {
 	// 解析命令行参数
-	flag.StringVar(&targetWiFi, "w", "qqqq", "目标WiFi网络名称")
-	flag.StringVar(&wifiPassword, "p", "", "WiFi密码")
-	flag.IntVar(&checkInterval, "i", 10, "检查间隔时间（秒）")
+	flag.StringVar(&targetWiFi, "wifi", "", "目标WiFi网络名称")
+	flag.StringVar(&wifiPassword, "password", "", "WiFi密码")
+	flag.IntVar(&checkInterval, "interval", 30, "检查间隔（秒）")
+	flag.BoolVar(&runOnce, "once", false, "只运行一次")
 	flag.Parse()
 
-	// 验证参数
+	// 检查必需参数
 	if targetWiFi == "" {
-		log.Fatal("WiFi网络名称不能为空")
-	}
-	if checkInterval <= 0 {
-		log.Fatal("检查间隔必须大于0")
+		log.Fatal("请指定目标WiFi网络名称，使用 -wifi 参数")
 	}
 
-	// 自动检测WiFi网卡接口
+	// 创建WiFi连接器
 	var err error
-	wifiInterface, err = getWiFiInterface()
+	connector, err = NewWiFiConnector()
 	if err != nil {
-		log.Fatalf("检测WiFi网卡接口失败: %v", err)
+		log.Fatalf("创建WiFi连接器失败: %v", err)
 	}
 
 	log.Println("WiFi自动连接程序启动")
-	log.Printf("检测到WiFi网卡接口: %s", wifiInterface)
+	interfaceName, _ := connector.GetInterface()
+	log.Printf("检测到WiFi接口: %s", interfaceName)
 	log.Printf("目标WiFi网络: %s", targetWiFi)
 	if wifiPassword != "" {
-		log.Println("使用提供的密码")
+		log.Println("已设置WiFi密码")
 	} else {
-		log.Println("使用系统保存的密码")
+		log.Println("未设置WiFi密码，将尝试使用已保存的密码")
 	}
 	log.Printf("检查间隔: %d秒", checkInterval)
 
-	// 立即执行一次检查
+	// 执行检查和连接
 	checkAndConnect()
 
-	// 创建定时器，周期性检查
+	// 如果设置为只运行一次，则退出
+	if runOnce {
+		log.Println("程序执行完毕")
+		return
+	}
+
+	// 定期检查
 	ticker := time.NewTicker(time.Duration(checkInterval) * time.Second)
 	defer ticker.Stop()
 
