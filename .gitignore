@@ -36,3 +36,4 @@ dist.zip
 data/
 ./dist/*
 ./dist
+auto-connect-wifi
