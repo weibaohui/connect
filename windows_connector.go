@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // WindowsConnector Windows平台的WiFi连接器
@@ -91,7 +92,20 @@ func (w *WindowsConnector) Connect(networkName, password string) error {
 		return fmt.Errorf("连接WiFi失败: %v", err)
 	}
 
-	return nil
+	// 等待连接完成并验证连接结果
+	for i := 0; i < 10; i++ { // 最多等待10秒
+		time.Sleep(1 * time.Second)
+		currentNetwork, err := w.GetCurrentNetwork()
+		if err != nil {
+			continue
+		}
+		if currentNetwork == networkName {
+			return nil // 连接成功
+		}
+	}
+
+	// 如果10秒后仍未连接到目标网络，返回错误
+	return fmt.Errorf("连接超时：无法连接到WiFi网络 '%s'，可能网络不存在或密码错误", networkName)
 }
 
 // IsEnabled 实现WiFiConnector接口 - 检查WiFi是否启用
