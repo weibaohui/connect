@@ -124,14 +124,6 @@ GOOS=darwin GOARCH=arm64 go build -o connect-darwin-arm64 main.go
 GOOS=linux GOARCH=amd64 go build -o connect-linux-amd64 main.go
 ```
 
-### 4. 运行程序
-
-程序支持以下命令行参数：
-
-- `-wifi` / `-w`: 目标WiFi网络名称（默认："qqqq"）
-- `-password` / `-p`: WiFi密码（可选，如果为空则使用系统保存的密码）
-- `-interval` / `-i`: 检查间隔时间，单位秒（默认：10）
-
 #### 基本使用
 ```bash
 # 使用默认设置（连接到"qqqq"网络）
