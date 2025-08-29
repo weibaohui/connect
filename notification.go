@@ -31,16 +31,21 @@ func (d *IPChangeDetector) CheckIPChange(newIP string) bool {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	d.previousIP = d.currentIP
-	d.currentIP = newIP
-
-	// 第一次获取IP地址时返回true
-	if d.previousIP == "" {
+	// 如果当前IP为空，说明是第一次设置
+	if d.currentIP == "" {
+		d.currentIP = newIP
 		return true
 	}
 
-	// 检查IP是否发生变化
-	return d.previousIP != d.currentIP
+	// 如果IP地址发生变化
+	if d.currentIP != newIP {
+		d.previousIP = d.currentIP
+		d.currentIP = newIP
+		return true
+	}
+
+	// IP地址未变化
+	return false
 }
 
 // GetPreviousIP 获取之前的IP地址
