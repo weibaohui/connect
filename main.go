@@ -17,11 +17,47 @@ var (
 	wifiPassword string
 	// 检查间隔时间（秒）
 	checkInterval int
+	// WiFi网卡接口名称
+	wifiInterface string
 )
+
+// getWiFiInterface 自动检测WiFi网卡接口名称
+func getWiFiInterface() (string, error) {
+	cmd := exec.Command("networksetup", "-listallhardwareports")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("获取网络接口列表失败: %v", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for i, line := range lines {
+		if strings.Contains(line, "Wi-Fi") || strings.Contains(line, "AirPort") {
+			// 找到WiFi接口，下一行应该是Device
+			if i+1 < len(lines) {
+				deviceLine := lines[i+1]
+				if strings.HasPrefix(deviceLine, "Device: ") {
+					device := strings.TrimPrefix(deviceLine, "Device: ")
+					return strings.TrimSpace(device), nil
+				}
+			}
+		}
+	}
+
+	// 如果没有找到WiFi接口，尝试常见的接口名称
+	commonInterfaces := []string{"en0", "en1", "en2"}
+	for _, iface := range commonInterfaces {
+		cmd := exec.Command("networksetup", "-getairportpower", iface)
+		if err := cmd.Run(); err == nil {
+			return iface, nil
+		}
+	}
+
+	return "", fmt.Errorf("未找到WiFi网络接口")
+}
 
 // getCurrentWiFi 获取当前连接的WiFi网络名称
 func getCurrentWiFi() (string, error) {
-	cmd := exec.Command("networksetup", "-getairportnetwork", "en0")
+	cmd := exec.Command("networksetup", "-getairportnetwork", wifiInterface)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("获取当前WiFi失败: %v", err)
@@ -47,10 +83,10 @@ func connectToWiFi(networkName, password string) error {
 	var cmd *exec.Cmd
 	if password != "" {
 		// 如果提供了密码，使用密码连接
-		cmd = exec.Command("networksetup", "-setairportnetwork", "en0", networkName, password)
+		cmd = exec.Command("networksetup", "-setairportnetwork", wifiInterface, networkName, password)
 	} else {
 		// 如果没有提供密码，尝试使用已保存的密码连接
-		cmd = exec.Command("networksetup", "-setairportnetwork", "en0", networkName)
+		cmd = exec.Command("networksetup", "-setairportnetwork", wifiInterface, networkName)
 	}
 	err := cmd.Run()
 	if err != nil {
@@ -62,7 +98,7 @@ func connectToWiFi(networkName, password string) error {
 
 // isWiFiEnabled 检查WiFi是否已启用
 func isWiFiEnabled() bool {
-	cmd := exec.Command("networksetup", "-getairportpower", "en0")
+	cmd := exec.Command("networksetup", "-getairportpower", wifiInterface)
 	output, err := cmd.Output()
 	if err != nil {
 		log.Printf("检查WiFi状态失败: %v", err)
@@ -76,7 +112,7 @@ func isWiFiEnabled() bool {
 // enableWiFi 启用WiFi
 func enableWiFi() error {
 	log.Println("正在启用WiFi...")
-	cmd := exec.Command("networksetup", "-setairportpower", "en0", "on")
+	cmd := exec.Command("networksetup", "-setairportpower", wifiInterface, "on")
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("启用WiFi失败: %v", err)
@@ -125,9 +161,12 @@ func checkAndConnect() {
 
 func main() {
 	// 解析命令行参数
-	flag.StringVar(&targetWiFi, "w", "qqqq", "目标WiFi网络名称")
-	flag.StringVar(&wifiPassword, "p", "", "WiFi密码（可选，如果为空则使用系统保存的密码）")
-	flag.IntVar(&checkInterval, "i", 10, "检查间隔时间（秒）")
+	flag.StringVar(&targetWiFi, "wifi", "qqqq", "目标WiFi网络名称")
+	flag.StringVar(&targetWiFi, "w", "qqqq", "目标WiFi网络名称（简写）")
+	flag.StringVar(&wifiPassword, "password", "", "WiFi密码（可选，如果为空则使用系统保存的密码）")
+	flag.StringVar(&wifiPassword, "p", "", "WiFi密码（简写）")
+	flag.IntVar(&checkInterval, "interval", 10, "检查间隔时间（秒）")
+	flag.IntVar(&checkInterval, "i", 10, "检查间隔时间（秒）（简写）")
 	flag.Parse()
 
 	// 验证参数
@@ -138,7 +177,15 @@ func main() {
 		log.Fatal("检查间隔必须大于0")
 	}
 
+	// 自动检测WiFi网卡接口
+	var err error
+	wifiInterface, err = getWiFiInterface()
+	if err != nil {
+		log.Fatalf("检测WiFi网卡接口失败: %v", err)
+	}
+
 	log.Println("WiFi自动连接程序启动")
+	log.Printf("检测到WiFi网卡接口: %s", wifiInterface)
 	log.Printf("目标WiFi网络: %s", targetWiFi)
 	if wifiPassword != "" {
 		log.Println("使用提供的密码")
