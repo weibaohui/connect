@@ -30,7 +30,7 @@ build_binary() {
     local output_name="${APP_NAME}-${os}-${arch}${ext}"
     local output_path="${OUTPUT_DIR}/${output_name}"
     
-    GOOS=$os GOARCH=$arch go build -ldflags "-s -w -X main.version=${VERSION}" -o "$output_path" main.go
+    GOOS=$os GOARCH=$arch go build -ldflags "-s -w -X main.version=${VERSION}" -o "$output_path" *.go
     
     if [ $? -eq 0 ]; then
         echo "✓ 编译成功: $output_path"
