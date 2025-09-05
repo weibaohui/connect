@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -159,6 +160,15 @@ func (f *FeishuNotifier) buildWiFiReconnectMessage(ip, networkName string) *Feis
 	}
 }
 
+// FeishuResponse 飞书响应结构
+type FeishuResponse struct {
+	Code          int    `json:"code"`
+	Msg           string `json:"msg"`
+	Data          map[string]interface{} `json:"data"`
+	StatusCode    int    `json:"StatusCode"`
+	StatusMessage string `json:"StatusMessage"`
+}
+
 // SendIPChangeNotification 发送IP变化通知
 func (f *FeishuNotifier) SendIPChangeNotification(oldIP, newIP, networkName string) error {
 	if f.webhookURL == "" || f.secret == "" {
@@ -180,9 +190,30 @@ func (f *FeishuNotifier) SendIPChangeNotification(oldIP, newIP, networkName stri
 	}
 	defer resp.Body.Close()
 
+	// 读取响应内容
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("读取响应内容失败: %v", err)
+		return fmt.Errorf("读取响应内容失败: %v", err)
+	}
+	
+	log.Printf("飞书通知响应状态: %d, 响应内容: %s", resp.StatusCode, string(respBody))
+
+	// 解析响应内容
+	var feishuResp FeishuResponse
+	if err := json.Unmarshal(respBody, &feishuResp); err != nil {
+		log.Printf("解析飞书响应失败: %v", err)
+		return fmt.Errorf("解析飞书响应失败: %v", err)
+	}
+
 	// 检查响应状态
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("请求失败，状态码: %d", resp.StatusCode)
+		return fmt.Errorf("HTTP请求失败，状态码: %d", resp.StatusCode)
+	}
+
+	// 检查飞书响应码
+	if feishuResp.Code != 0 && feishuResp.StatusCode != 0 {
+		return fmt.Errorf("飞书通知发送失败，错误码: %d, 错误信息: %s", feishuResp.Code, feishuResp.Msg)
 	}
 
 	log.Printf("飞书通知发送成功: %s", networkName)
@@ -231,9 +262,30 @@ func (f *FeishuNotifier) SendWiFiReconnectNotification(ip, networkName string) e
 	}
 	defer resp.Body.Close()
 
+	// 读取响应内容
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("读取响应内容失败: %v", err)
+		return fmt.Errorf("读取响应内容失败: %v", err)
+	}
+	
+	log.Printf("飞书WiFi重新连接通知响应状态: %d, 响应内容: %s", resp.StatusCode, string(respBody))
+
+	// 解析响应内容
+	var feishuResp FeishuResponse
+	if err := json.Unmarshal(respBody, &feishuResp); err != nil {
+		log.Printf("解析飞书响应失败: %v", err)
+		return fmt.Errorf("解析飞书响应失败: %v", err)
+	}
+
 	// 检查响应状态
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("请求失败，状态码: %d", resp.StatusCode)
+		return fmt.Errorf("HTTP请求失败，状态码: %d", resp.StatusCode)
+	}
+
+	// 检查飞书响应码
+	if feishuResp.Code != 0 && feishuResp.StatusCode != 0 {
+		return fmt.Errorf("飞书通知发送失败，错误码: %d, 错误信息: %s", feishuResp.Code, feishuResp.Msg)
 	}
 
 	log.Printf("飞书WiFi重新连接通知发送成功: %s", networkName)

@@ -74,8 +74,8 @@ fi
 
 # 执行程序
 echo "启动WiFi自动连接程序..."
-echo "执行命令: sudo $PROGRAM_FILE $CMD_ARGS"
-sudo $PROGRAM_FILE $CMD_ARGS
+echo "执行命令:  $PROGRAM_FILE $CMD_ARGS"
+ $PROGRAM_FILE $CMD_ARGS
 
 # 如果程序退出，显示提示信息
 echo ""
