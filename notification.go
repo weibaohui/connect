@@ -123,7 +123,7 @@ func (f *FeishuNotifier) buildMessage(oldIP, newIP, networkName string) *FeishuM
 
 	var messageText string
 	if oldIP == "" {
-		// 首次获取IP地址
+		// 首次获取IP地址或WiFi重新连接
 		messageText = fmt.Sprintf("🌐 WiFi连接状态通知\n网络：%s\n✅ 已连接，IP地址：%s\n时间：%s",
 			networkName, newIP, time.Now().Format("2006-01-02 15:04:05"))
 	} else {
@@ -131,6 +131,23 @@ func (f *FeishuNotifier) buildMessage(oldIP, newIP, networkName string) *FeishuM
 		messageText = fmt.Sprintf("🌐 WiFi连接状态更新\n网络：%s\n🔄 IP地址变化：%s → %s\n时间：%s",
 			networkName, oldIP, newIP, time.Now().Format("2006-01-02 15:04:05"))
 	}
+
+	return &FeishuMessage{
+		MsgType: "text",
+		Content: MessageContent{
+			Text: messageText,
+		},
+		Timestamp: timestamp,
+		Sign:      f.generateSignature(timestamp),
+	}
+}
+
+// buildWiFiReconnectMessage 构建WiFi重新连接消息
+func (f *FeishuNotifier) buildWiFiReconnectMessage(ip, networkName string) *FeishuMessage {
+	timestamp := time.Now().Unix()
+
+	messageText := fmt.Sprintf("🌐 WiFi重新连接通知\n网络：%s\n✅ 已重新连接，IP地址：%s\n时间：%s",
+		networkName, ip, time.Now().Format("2006-01-02 15:04:05"))
 
 	return &FeishuMessage{
 		MsgType: "text",
@@ -190,5 +207,56 @@ func (f *FeishuNotifier) SendIPChangeNotificationAsync(oldIP, newIP, networkName
 			}
 		}
 		log.Printf("飞书通知发送最终失败，已重试%d次", maxRetries)
+	}()
+}
+
+// SendWiFiReconnectNotification 发送WiFi重新连接通知
+func (f *FeishuNotifier) SendWiFiReconnectNotification(ip, networkName string) error {
+	if f.webhookURL == "" || f.secret == "" {
+		return fmt.Errorf("飞书通知配置不完整")
+	}
+
+	message := f.buildWiFiReconnectMessage(ip, networkName)
+
+	// 序列化消息
+	messageData, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %v", err)
+	}
+
+	// 发送HTTP请求
+	resp, err := f.httpClient.Post(f.webhookURL, "application/json", bytes.NewBuffer(messageData))
+	if err != nil {
+		return fmt.Errorf("发送请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("请求失败，状态码: %d", resp.StatusCode)
+	}
+
+	log.Printf("飞书WiFi重新连接通知发送成功: %s", networkName)
+	return nil
+}
+
+// SendWiFiReconnectNotificationAsync 异步发送WiFi重新连接通知
+func (f *FeishuNotifier) SendWiFiReconnectNotificationAsync(ip, networkName string) {
+	go func() {
+		// 实现重试机制
+		maxRetries := 3
+		for i := 0; i < maxRetries; i++ {
+			err := f.SendWiFiReconnectNotification(ip, networkName)
+			if err == nil {
+				return
+			}
+
+			log.Printf("飞书WiFi重新连接通知发送失败 (第%d次重试): %v", i+1, err)
+			if i < maxRetries-1 {
+				// 指数退避重试
+				time.Sleep(time.Duration(i+1) * time.Second)
+			}
+		}
+		log.Printf("飞书WiFi重新连接通知发送最终失败，已重试%d次", maxRetries)
 	}()
 }

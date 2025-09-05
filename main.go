@@ -25,11 +25,53 @@ var (
 	connector WiFiConnector
 	// IP变化检测器
 	ipDetector *IPChangeDetector
+	// WiFi连接状态检测器
+	wifiStateDetector *WiFiStateDetector
 	// 飞书通知器
 	feishuNotifier *FeishuNotifier
 	// 程序版本
 	version string = "1.0.0"
 )
+
+// WiFiStateDetector WiFi连接状态检测器
+type WiFiStateDetector struct {
+	previousNetwork string
+	currentNetwork  string
+}
+
+// NewWiFiStateDetector 创建新的WiFi状态检测器
+func NewWiFiStateDetector() *WiFiStateDetector {
+	return &WiFiStateDetector{}
+}
+
+// CheckWiFiStateChange 检测WiFi连接状态是否发生变化
+func (d *WiFiStateDetector) CheckWiFiStateChange(newNetwork string) bool {
+	// 如果当前网络为空，说明是第一次设置
+	if d.currentNetwork == "" {
+		d.currentNetwork = newNetwork
+		return true
+	}
+
+	// 如果WiFi网络发生变化
+	if d.currentNetwork != newNetwork {
+		d.previousNetwork = d.currentNetwork
+		d.currentNetwork = newNetwork
+		return true
+	}
+
+	// WiFi网络未变化
+	return false
+}
+
+// GetPreviousNetwork 获取之前的WiFi网络
+func (d *WiFiStateDetector) GetPreviousNetwork() string {
+	return d.previousNetwork
+}
+
+// GetCurrentNetwork 获取当前的WiFi网络
+func (d *WiFiStateDetector) GetCurrentNetwork() string {
+	return d.currentNetwork
+}
 
 // checkAndConnect 检查并连接WiFi的主要逻辑
 func checkAndConnect() {
@@ -66,6 +108,12 @@ func checkAndConnect() {
 		log.Printf("当前连接的WiFi: %s", currentWiFi)
 	}
 
+	// 检查WiFi状态是否发生变化
+	wifiStateChanged := false
+	if wifiStateDetector != nil {
+		wifiStateChanged = wifiStateDetector.CheckWiFiStateChange(currentWiFi)
+	}
+
 	// 如果当前WiFi不是目标WiFi，则尝试连接
 	if currentWiFi != targetWiFi {
 		log.Printf("尝试连接到WiFi: %s", targetWiFi)
@@ -88,8 +136,12 @@ func checkAndConnect() {
 						oldIP := ipDetector.GetPreviousIP()
 						log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
 						feishuNotifier.SendIPChangeNotificationAsync(oldIP, ipAddr, targetWiFi)
+					} else if wifiStateChanged {
+						// 即使IP未变化，但如果WiFi重新连接了，也要发送通知
+						log.Printf("发送飞书通知(因WiFi重新连接): %s", ipAddr)
+						feishuNotifier.SendWiFiReconnectNotificationAsync(ipAddr, targetWiFi)
 					} else {
-						log.Printf("IP地址未变化，不发送通知: %s", ipAddr)
+						log.Printf("IP地址未变化，WiFi状态未变化，不发送通知: %s", ipAddr)
 					}
 				} else {
 					if !enableNotification {
@@ -117,8 +169,12 @@ func checkAndConnect() {
 					oldIP := ipDetector.GetPreviousIP()
 					log.Printf("发送飞书通知(因IP变化): %s -> %s", oldIP, ipAddr)
 					feishuNotifier.SendIPChangeNotificationAsync(oldIP, ipAddr, targetWiFi)
+				} else if wifiStateChanged {
+					// 即使IP未变化，但如果WiFi重新连接了，也要发送通知
+					log.Printf("发送飞书通知(因WiFi重新连接): %s", ipAddr)
+					feishuNotifier.SendWiFiReconnectNotificationAsync(ipAddr, targetWiFi)
 				} else {
-					log.Printf("IP地址未变化，不发送通知: %s", ipAddr)
+					log.Printf("IP地址未变化，WiFi状态未变化，不发送通知: %s", ipAddr)
 				}
 			} else {
 				if !enableNotification {
@@ -167,6 +223,7 @@ func main() {
 			enableNotification = false
 		} else {
 			ipDetector = NewIPChangeDetector()
+			wifiStateDetector = NewWiFiStateDetector()
 			feishuNotifier = NewFeishuNotifier(feishuWebhook, feishuSecret)
 			log.Printf("通知功能已启用: %s", feishuWebhook)
 		}
