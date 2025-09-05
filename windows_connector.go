@@ -235,8 +235,8 @@ func (w *WindowsConnector) GetInterface() (string, error) {
 
 // GetCurrentNetwork 实现WiFiConnector接口 - 获取当前WiFi网络
 func (w *WindowsConnector) GetCurrentNetwork() (string, error) {
-	// 使用PowerShell获取当前连接的WiFi网络
-	command := `(Get-NetConnectionProfile | Where-Object {$_.InterfaceAlias -eq '` + w.interfaceName + `'}).Name`
+	// 使用netsh命令获取当前连接的WiFi网络
+	command := `netsh wlan show interfaces | Select-String "SSID" | Where-Object { $_.Line -match "SSID" -and $_.Line -notmatch "BSSID" } | ForEach-Object { ($_ -split ":")[1].Trim() }`
 	ssid, err := w.executePowerShellCommand(command)
 	if err == nil && ssid != "" {
 		// 清理SSID名称，去除特殊状态信息
@@ -267,10 +267,29 @@ func (w *WindowsConnector) GetCurrentNetwork() (string, error) {
 		return ssid2, nil
 	}
 
+	// 原有方法：使用PowerShell获取当前连接的WiFi网络
+	command3 := `(Get-NetConnectionProfile | Where-Object {$_.InterfaceAlias -eq '` + w.interfaceName + `'}).Name`
+	ssid3, err3 := w.executePowerShellCommand(command3)
+	if err3 == nil && ssid3 != "" {
+		// 清理SSID名称，去除特殊状态信息
+		ssid3 = strings.TrimSpace(ssid3)
+		// 如果SSID包含"正在识别"，则认为网络正在切换中
+		if strings.Contains(ssid3, "正在识别") {
+			fmt.Printf("[DEBUG] 网络正在识别中: %s\n", ssid3)
+			return "正在识别", nil
+		}
+		// 如果SSID以"正在识别"开头，则认为未连接
+		if strings.HasPrefix(ssid3, "正在识别") {
+			return "正在识别", nil
+		}
+		fmt.Printf("[DEBUG] 获取到当前网络: %s\n", ssid3)
+		return ssid3, nil
+	}
+
 	// 最后尝试：使用WMI查询
-	command3 := `(Get-WmiObject -Class Win32_NetworkAdapterConfiguration | Where-Object {$_.Description -match 'Wireless|Wi-Fi' -and $_.IPEnabled -eq $true}).Description`
-	result, err3 := w.executePowerShellCommand(command3)
-	if err3 != nil || result == "" {
+	command4 := `(Get-WmiObject -Class Win32_NetworkAdapterConfiguration | Where-Object {$_.Description -match 'Wireless|Wi-Fi' -and $_.IPEnabled -eq $true}).Description`
+	result, err4 := w.executePowerShellCommand(command4)
+	if err4 != nil || result == "" {
 		fmt.Printf("[DEBUG] 未连接任何WiFi网络\n")
 		return "", nil // 未连接任何WiFi
 	}
