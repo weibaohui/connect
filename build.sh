@@ -74,3 +74,6 @@ du -h $OUTPUT_DIR/*
 
 echo ""
 echo "所有平台编译完成！"
+cp start_connect_linux.sh $OUTPUT_DIR
+cp start_connect_macos.sh $OUTPUT_DIR
+cp start_connect_windows.bat $OUTPUT_DIR

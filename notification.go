@@ -162,11 +162,11 @@ func (f *FeishuNotifier) buildWiFiReconnectMessage(ip, networkName string) *Feis
 
 // FeishuResponse 飞书响应结构
 type FeishuResponse struct {
-	Code          int    `json:"code"`
-	Msg           string `json:"msg"`
+	Code          int                    `json:"code"`
+	Msg           string                 `json:"msg"`
 	Data          map[string]interface{} `json:"data"`
-	StatusCode    int    `json:"StatusCode"`
-	StatusMessage string `json:"StatusMessage"`
+	StatusCode    int                    `json:"StatusCode"`
+	StatusMessage string                 `json:"StatusMessage"`
 }
 
 // SendIPChangeNotification 发送IP变化通知
@@ -196,7 +196,7 @@ func (f *FeishuNotifier) SendIPChangeNotification(oldIP, newIP, networkName stri
 		log.Printf("读取响应内容失败: %v", err)
 		return fmt.Errorf("读取响应内容失败: %v", err)
 	}
-	
+
 	log.Printf("飞书通知响应状态: %d, 响应内容: %s", resp.StatusCode, string(respBody))
 
 	// 解析响应内容
@@ -212,7 +212,7 @@ func (f *FeishuNotifier) SendIPChangeNotification(oldIP, newIP, networkName stri
 	}
 
 	// 检查飞书响应码
-	if feishuResp.Code != 0 && feishuResp.StatusCode != 0 {
+	if feishuResp.Code != 0 {
 		return fmt.Errorf("飞书通知发送失败，错误码: %d, 错误信息: %s", feishuResp.Code, feishuResp.Msg)
 	}
 
@@ -268,7 +268,7 @@ func (f *FeishuNotifier) SendWiFiReconnectNotification(ip, networkName string) e
 		log.Printf("读取响应内容失败: %v", err)
 		return fmt.Errorf("读取响应内容失败: %v", err)
 	}
-	
+
 	log.Printf("飞书WiFi重新连接通知响应状态: %d, 响应内容: %s", resp.StatusCode, string(respBody))
 
 	// 解析响应内容
