@@ -197,8 +197,6 @@ func (f *FeishuNotifier) SendIPChangeNotification(oldIP, newIP, networkName stri
 		return fmt.Errorf("读取响应内容失败: %v", err)
 	}
 
-	log.Printf("飞书通知响应状态: %d, 响应内容: %s", resp.StatusCode, string(respBody))
-
 	// 解析响应内容
 	var feishuResp FeishuResponse
 	if err := json.Unmarshal(respBody, &feishuResp); err != nil {
