@@ -22,12 +22,13 @@ func NewWindowsConnector() (*WindowsConnector, error) {
 	connector.interfaceName = interfaceName
 	return connector, nil
 }
+
 // executePowerShellCommand 执行PowerShell命令并返回输出结果
 func (w *WindowsConnector) executePowerShellCommand(command string) (string, error) {
 	fmt.Printf("[DEBUG] 执行PowerShell命令: %s\n", command)
 	// 尝试多种PowerShell调用方式以提高兼容性
 	var cmd *exec.Cmd
-	
+
 	// 方式1：使用-NoProfile -ExecutionPolicy Bypass参数
 	cmd = exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "+command)
 	output, err := cmd.CombinedOutput()
@@ -67,19 +68,19 @@ func (w *WindowsConnector) selectBestWiFiInterface(output string) string {
 			validInterfaces = append(validInterfaces, line)
 		}
 	}
-	
+
 	fmt.Printf("[DEBUG] 解析出的接口列表: %v\n", validInterfaces)
 	// 如果没有找到任何接口，返回空字符串
 	if len(validInterfaces) == 0 {
 		fmt.Printf("[DEBUG] 没有找到任何接口\n")
 		return ""
 	}
-	
+
 	// WiFi接口优先级排序（从高到低）
 	wifiPriority := []string{
 		"WLAN", "Wi-Fi", "WiFi", "无线", "Wireless",
 	}
-	
+
 	// 首先按优先级查找
 	for _, priority := range wifiPriority {
 		for _, iface := range validInterfaces {
@@ -89,7 +90,7 @@ func (w *WindowsConnector) selectBestWiFiInterface(output string) string {
 			}
 		}
 	}
-	
+
 	// 如果没有找到优先级匹配的，排除明显的以太网接口
 	fmt.Printf("[DEBUG] 未找到优先级匹配，开始排除非WiFi接口\n")
 	for _, iface := range validInterfaces {
@@ -111,7 +112,7 @@ func (w *WindowsConnector) selectBestWiFiInterface(output string) string {
 		fmt.Printf("[DEBUG] 选择接口: %s\n", iface)
 		return iface
 	}
-	
+
 	// 如果都被排除了，返回第一个（作为最后的备用方案）
 	if len(validInterfaces) > 0 {
 		fmt.Printf("[DEBUG] 所有接口都被排除，使用第一个作为备用方案: %s\n", validInterfaces[0])
@@ -124,7 +125,7 @@ func (w *WindowsConnector) selectBestWiFiInterface(output string) string {
 // detectInterface 检测WiFi网络接口
 func (w *WindowsConnector) detectInterface() (string, error) {
 	fmt.Printf("开始检测WiFi接口...\n")
-	
+
 	// 方法1：获取所有网络适配器并显示调试信息
 	fmt.Printf("[INFO] 方法1: 获取所有网络适配器信息\n")
 	command := `Get-NetAdapter | Format-Table Name, InterfaceDescription, MediaType, Status -AutoSize`
@@ -134,7 +135,7 @@ func (w *WindowsConnector) detectInterface() (string, error) {
 	} else {
 		fmt.Printf("[ERROR] 方法1失败: %v\n", err)
 	}
-	
+
 	// 方法2：按名称匹配WiFi接口（扩展匹配模式）
 	fmt.Printf("[INFO] 方法2: 按名称匹配WiFi接口\n")
 	command2 := `Get-NetAdapter | Where-Object {$_.Name -match 'Wi-Fi|无线|WLAN|WiFi|Wireless|以太网|Ethernet.*Wi|Wi.*Fi'} | Select-Object -ExpandProperty Name`
@@ -223,7 +224,7 @@ func (w *WindowsConnector) detectInterface() (string, error) {
 	fmt.Printf("- 方法4错误: %v\n", err4)
 	fmt.Printf("- 方法5错误: %v\n", err5)
 	fmt.Printf("- 方法6错误: %v\n", err6)
-	
+
 	return "", fmt.Errorf("未找到 WiFi 网络接口。请确保:\n1. WiFi 适配器已安装并启用\n2. 以管理员权限运行程序\n3. PowerShell 命令可用\n4. 检查上述调试信息确认适配器状态")
 }
 
@@ -238,6 +239,18 @@ func (w *WindowsConnector) GetCurrentNetwork() (string, error) {
 	command := `(Get-NetConnectionProfile | Where-Object {$_.InterfaceAlias -eq '` + w.interfaceName + `'}).Name`
 	ssid, err := w.executePowerShellCommand(command)
 	if err == nil && ssid != "" {
+		// 清理SSID名称，去除特殊状态信息
+		ssid = strings.TrimSpace(ssid)
+		// 如果SSID包含"正在识别"，则认为网络正在切换中
+		if strings.Contains(ssid, "正在识别") {
+			fmt.Printf("[DEBUG] 网络正在识别中: %s\n", ssid)
+			return "正在识别", nil
+		}
+		// 如果SSID以"正在识别"开头，则认为未连接
+		if strings.HasPrefix(ssid, "正在识别") {
+			return "正在识别", nil
+		}
+		fmt.Printf("[DEBUG] 获取到当前网络: %s\n", ssid)
 		return ssid, nil
 	}
 
@@ -245,6 +258,12 @@ func (w *WindowsConnector) GetCurrentNetwork() (string, error) {
 	command2 := `(netsh wlan show interfaces | Select-String 'SSID' | Select-String -NotMatch 'BSSID').ToString().Split(':')[1].Trim()`
 	ssid2, err2 := w.executePowerShellCommand(command2)
 	if err2 == nil && ssid2 != "" {
+		ssid2 = strings.TrimSpace(ssid2)
+		if strings.Contains(ssid2, "正在识别") {
+			fmt.Printf("[DEBUG] 网络正在识别中（备用方法）: %s\n", ssid2)
+			return "正在识别", nil
+		}
+		fmt.Printf("[DEBUG] 获取到当前网络（备用方法）: %s\n", ssid2)
 		return ssid2, nil
 	}
 
@@ -252,10 +271,12 @@ func (w *WindowsConnector) GetCurrentNetwork() (string, error) {
 	command3 := `(Get-WmiObject -Class Win32_NetworkAdapterConfiguration | Where-Object {$_.Description -match 'Wireless|Wi-Fi' -and $_.IPEnabled -eq $true}).Description`
 	result, err3 := w.executePowerShellCommand(command3)
 	if err3 != nil || result == "" {
+		fmt.Printf("[DEBUG] 未连接任何WiFi网络\n")
 		return "", nil // 未连接任何WiFi
 	}
 
-	return "", nil // 未连接任何WiFi
+	fmt.Printf("[DEBUG] 获取到当前网络（WMI方法）: %s\n", result)
+	return result, nil
 }
 
 // Connect 实现WiFiConnector接口 - 连接WiFi网络
@@ -302,18 +323,41 @@ func (w *WindowsConnector) Connect(networkName, password string) error {
 	}
 
 	// 等待连接完成并验证连接结果
-	for i := 0; i < 10; i++ { // 最多等待10秒
+	// 增加等待时间并改进验证逻辑
+	for i := 0; i < 20; i++ { // 增加到20秒以确保有足够时间完成连接
 		time.Sleep(1 * time.Second)
+		fmt.Printf("[DEBUG] 第%d次检查连接状态\n", i+1)
+
+		// 使用多种方法检查连接状态
 		currentNetwork, err := w.GetCurrentNetwork()
 		if err != nil {
+			fmt.Printf("[DEBUG] 获取当前网络失败: %v\n", err)
 			continue
 		}
+
+		fmt.Printf("[DEBUG] 当前网络: '%s', 目标网络: '%s'\n", currentNetwork, networkName)
+
+		// 检查是否已经连接到目标网络
 		if currentNetwork == networkName {
+			fmt.Printf("[DEBUG] 成功连接到目标网络\n")
 			return nil // 连接成功
+		}
+
+		// 检查特殊情况：网络正在识别中，继续等待
+		if strings.Contains(currentNetwork, "正在识别") {
+			fmt.Printf("[DEBUG] 网络正在识别中，继续等待\n")
+			continue
+		}
+
+		// 检查网络名称是否部分匹配（处理可能的空格或特殊字符差异）
+		if strings.Contains(strings.TrimSpace(currentNetwork), strings.TrimSpace(networkName)) ||
+			strings.Contains(strings.TrimSpace(networkName), strings.TrimSpace(currentNetwork)) {
+			fmt.Printf("[DEBUG] 网络名称部分匹配，认为连接成功\n")
+			return nil
 		}
 	}
 
-	// 如果10秒后仍未连接到目标网络，返回错误
+	// 如果20秒后仍未连接到目标网络，返回错误
 	return fmt.Errorf("连接超时：无法连接到WiFi网络 '%s'，可能网络不存在或密码错误", networkName)
 }
 
@@ -336,19 +380,19 @@ func (w *WindowsConnector) IsEnabled() bool {
 	}
 
 	fmt.Printf("WiFi接口 %s 状态: %s\n", w.interfaceName, status)
-	
+
 	// 检查状态是否为Up（启用）
 	if strings.Contains(strings.ToLower(status), "up") {
 		fmt.Printf("WiFi接口状态为Up，判断为已启用\n")
 		return true
 	}
-	
+
 	// 检查是否为禁用状态
 	if strings.Contains(strings.ToLower(status), "disabled") || strings.Contains(strings.ToLower(status), "down") {
 		fmt.Printf("WiFi接口状态为禁用\n")
 		return false
 	}
-	
+
 	// 备用方法：检查是否能获取到WiFi配置文件
 	command2 := `netsh wlan show profiles | Select-String "All User Profile"`
 	profiles, err2 := w.executePowerShellCommand(command2)
@@ -356,7 +400,7 @@ func (w *WindowsConnector) IsEnabled() bool {
 		fmt.Printf("能够获取WiFi配置文件，判断为已启用\n")
 		return true
 	}
-	
+
 	// 默认认为是启用的
 	fmt.Printf("无法确定状态，默认判断为已启用\n")
 	return true
