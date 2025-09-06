@@ -109,6 +109,27 @@ go build -o connect main.go
 build.bat
 ```
 
+**使用 Makefile（推荐）**：
+
+```
+# 编译当前平台的二进制文件（默认行为）
+make
+
+# 构建所有平台的二进制文件
+make build
+
+# 编译特定平台的二进制文件
+make build-windows
+make build-macos
+make build-linux
+
+# 清理编译产物
+make clean
+
+# 显示帮助信息
+make help
+```
+
 **手动编译**：
 ```bash
 # Windows 64位
@@ -188,7 +209,7 @@ export FEISHU_SECRET="your-secret-key"
 
 #### 方式二：运行时设置环境变量
 
-```bash
+```
 # 在命令行中直接设置环境变量并运行程序
 FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-id" \
 FEISHU_SECRET="your-secret-key" \
@@ -197,7 +218,7 @@ FEISHU_SECRET="your-secret-key" \
 
 ### 使用示例
 
-```bash
+```
 # 基础使用：连接WiFi并启用通知
 FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-id \
 FEISHU_SECRET=your-secret-key \

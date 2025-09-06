@@ -1,0 +1,35 @@
+name: build and push binary to release
+
+on:
+  release:
+    types: [created, published] # 表示在创建新的 Release 时触发
+env:
+  OPENAI_API_MODEL: Qwen/Qwen2.5-7B-Instruct
+  OPENAI_API_URL: https://public.chatgpt.k8m.site/v1
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置go环境
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache-dependency-path: "go.sum"
+
+      - name: Set build time variable
+        run: echo "BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+
+      - name: 编译后端
+        run: |
+          make build
+
+      - name: 上传二进制
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: bin/ca*
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true

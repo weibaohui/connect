@@ -12,7 +12,7 @@ APP_NAME="connect"
 VERSION="1.0.0"
 
 # 输出目录
-OUTPUT_DIR="dist"
+OUTPUT_DIR="bin"
 
 # 清理输出目录
 echo "清理输出目录..."
